@@ -1,12 +1,9 @@
 #pragma once
 #include <stdint.h>
-#include "types.h"
+#include "types.cuh"
 
 #define lgWARP 5
 #define WARP   (1 << lgWARP)
-
-
-
 
 
 template <class OP>
@@ -117,7 +114,7 @@ void copyFromGlb2ShrMem(uint32_t glb_offs,
 template<class OP, uint8_t CHUNK>
 __device__ __forceinline__
 void copyFromShr2GlbMem(uint32_t glb_offs,
-                        uint32_t   N,
+                        uint32_t N,
                         typename OP::ElTp          *d_out,
                         volatile typename OP::ElTp *shmem_red) {
   #pragma unroll

@@ -1,6 +1,13 @@
 #pragma once
 #include "extras.cu"
 
+#if ((BLOCK_SIZE) % 32 != 0)
+#error BLOCK_SIZE must be a multiple of 32.
+#endif
+#if ((MAX_CHUNK <= 0))
+#error MAX_CHUNK must be positive.
+#endif
+
 #define FIRST_IN_BLOCK (!threadIdx.x)
 #define FIRST_BLOCK    (!blockIdx)
 

@@ -30,7 +30,6 @@ public:
   static __host__ inline
   bool equals(const float t1, const float t2) { return abs(t1 - t2) < 0.1f; }
 
-
   static __device__ inline
   float get_random(uint32_t seed) {
     const uint32_t m = 149489;   // random numbers roughly in the range -74 .. 74

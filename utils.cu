@@ -29,7 +29,7 @@
 /*
  * cuda function error wrapper
  */
-inline void CUDASSERT(cudaError_t code) {
+void CUDASSERT(cudaError_t code) {
   if (code != cudaSuccess) {
     fprintf(stderr, "Cuda error: %s\n", cudaGetErrorString(code));
     exit(code);
@@ -87,9 +87,8 @@ template <class OP> __global__
 void init_device_array(uint32_t           N,
                        typename OP::ElTp *d_in) {
   uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
-  if (gid < N) {
+  if (gid < N)
     d_in[gid] = OP::get_random(gid); // use thread id as seed for computationally cheap "random" numbers
-  }
 }
 
 /*
@@ -188,17 +187,4 @@ void print_arr(volatile typename OP::ElTp *arr, uint32_t N) {
     printf("%d]\n", arr[N - 1]);
   else
     printf("]\n");
-}
-
-
-/*
- *  make-shift fetching of integers from stdin
- */
-int get_int(int low, int high = INT_MAX) {
-   int num = 0;
-   if (std::cin >> num && num >= low && num <= high) {
-     return num;
-   }
-   fprintf(stderr, "get_int() error: expected int in range [%d, %d]\n", low, high);
-   exit(1);
 }

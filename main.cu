@@ -1,4 +1,6 @@
 #include "utils.cu"
+#include <vector>
+
 
 template <class OP, uint16_t B>
 int SPAS(uint32_t           N,
@@ -99,31 +101,24 @@ int SPAS(uint32_t           N,
 }
 
 
-int main(int argc, char **argv) {
-  assert(argc == 1 && 
-         BLOCK_SIZE % 32 == 0 &&
-         MAX_CHUNK > 0);
-
-
-  // read test input sizes from stdin
-  int test_input_sizes[32];
-  int num_input_sizes = get_int(1, 32);
-  for (int i = 0; i < num_input_sizes; i++) 
-    test_input_sizes[i] = get_int(1, 1200000000);
-
-
+int main() {
   srand(101);
-  for (int i = 0; i < num_input_sizes; i++) {
-    uint32_t N = test_input_sizes[i];
+
+  std::vector<int> test_input_sizes;
+  int num;
+  while (std::cin >> num && num >= 1 && num <= 1200000000)
+    test_input_sizes.push_back(num);
+
+  for (int N : test_input_sizes) {
 
     void *d_in, *d_out;
-    uint32_t array_size = N*sizeof(float);
+    uint32_t array_size = N * sizeof(float);
 
     CUDASSERT(cudaMalloc(&d_in,  array_size));
     CUDASSERT(cudaMalloc(&d_out, array_size));
 
-    MyInt::ElTp   *int_d_in   = (MyInt::ElTp*)   d_in;   // reuse allocations for faster benchmarking
-    MyInt::ElTp   *int_d_out  = (MyInt::ElTp*)   d_out;
+    MyInt::ElTp   *int_d_in    = (MyInt::ElTp*)   d_in;   // reuse allocations for faster benchmarking
+    MyInt::ElTp   *int_d_out   = (MyInt::ElTp*)   d_out;
     MyFloat::ElTp *float_d_in  = (MyFloat::ElTp*) d_in;
     MyFloat::ElTp *float_d_out = (MyFloat::ElTp*) d_out;
 
@@ -140,7 +135,7 @@ int main(int argc, char **argv) {
       CUDASSERT(cudaMemcpy(h_in, int_d_in, array_size, cudaMemcpyDeviceToHost));
       CUDASSERT(cudaMemset(int_d_out, 0, array_size));
 
-      SPAS<Add<MyInt>,  BLOCK_SIZE>(N, true, int_d_in, int_d_out, h_in, h_out, seq_out);
+      SPAS<Add<MyInt>, BLOCK_SIZE>(N, true, int_d_in, int_d_out, h_in, h_out, seq_out);
 
       free(h_in);
       free(h_out);
