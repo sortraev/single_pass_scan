@@ -2,7 +2,16 @@
 #include <vector>
 
 
-template <class OP, uint16_t B>
+int i32_mul3(int x) {
+  return x * 3;
+}
+
+float f32_mul_pi(float x) {
+  return x * 3.1416;
+}
+
+
+template <class OP, uint16_t B, typename OP::ElTp (*map_f)(typename OP::ElTp)>
 int SPAS(uint32_t           N,
          bool               do_validate,
          typename OP::ElTp *d_in,
@@ -49,12 +58,12 @@ int SPAS(uint32_t           N,
      */
 
     // perform sequential scan
-    seq_scan<OP>(N, h_in, seq_out);
+    seq_scan<OP>(N, h_in, seq_out, map_f);
 
     // invoke SPAS :D
     for (int i = 0; i < RUNS; i++) {
       spas_kernel<OP, chunk><<<num_blocks, B, shared_mem_size>>>
-        (N, d_in, d_out, prefixes, aggregates, status_flags);
+        (N, d_in, d_out, prefixes, aggregates, status_flags, map_f);
     }
 
     // copy back result of SPAS and validate
@@ -71,13 +80,13 @@ int SPAS(uint32_t           N,
 
     // dry run of kernel
     spas_kernel<OP, chunk><<<num_blocks, B, shared_mem_size>>>
-      (N, d_in, d_out, prefixes, aggregates, status_flags);
+      (N, d_in, d_out, prefixes, aggregates, status_flags, map_f);
     
     // invoke SPAS kernel RUNS number of times, measuring total execution time
     CUDASSERT(cudaEventRecord(t_start));
     for (uint8_t i = 0; i < RUNS; i++) {
       spas_kernel<OP, chunk><<<num_blocks, B, shared_mem_size>>>
-        (N, d_in, d_out, prefixes, aggregates, status_flags);
+        (N, d_in, d_out, prefixes, aggregates, status_flags, map_f);
     }
     CUDASSERT(cudaEventRecord(t_end));
     CUDASSERT(cudaEventSynchronize(t_end)); CUDASSERT(cudaPeekAtLastError());
@@ -122,28 +131,28 @@ int main() {
     MyFloat::ElTp *float_d_in  = (MyFloat::ElTp*) d_in;
     MyFloat::ElTp *float_d_out = (MyFloat::ElTp*) d_out;
 
-    if (DO_VALIDATE) {
+    // if (DO_VALIDATE) {
       /*
        *  VALIDATION
        */
-      MyInt::ElTp *h_in, *h_out, *seq_out;
-      assert((h_in    = (MyInt::ElTp*) malloc(array_size)) != NULL);
-      assert((h_out   = (MyInt::ElTp*) malloc(array_size)) != NULL);
-      assert((seq_out = (MyInt::ElTp*) malloc(array_size)) != NULL);
-
-      init_array<MyInt, BLOCK_SIZE>(N, int_d_in);
-      CUDASSERT(cudaMemcpy(h_in, int_d_in, array_size, cudaMemcpyDeviceToHost));
-      CUDASSERT(cudaMemset(int_d_out, 0, array_size));
-
-      SPAS<Add<MyInt>, BLOCK_SIZE>(N, true, int_d_in, int_d_out, h_in, h_out, seq_out);
-
-      free(h_in);
-      free(h_out);
-      free(seq_out);
-    }
-
-
-    else {
+    //   MyInt::ElTp *h_in, *h_out, *seq_out;
+    //   assert((h_in    = (MyInt::ElTp*) malloc(array_size)) != NULL);
+    //   assert((h_out   = (MyInt::ElTp*) malloc(array_size)) != NULL);
+    //   assert((seq_out = (MyInt::ElTp*) malloc(array_size)) != NULL);
+    //
+    //   init_array<MyInt, BLOCK_SIZE>(N, int_d_in);
+    //   CUDASSERT(cudaMemcpy(h_in, int_d_in, array_size, cudaMemcpyDeviceToHost));
+    //   CUDASSERT(cudaMemset(int_d_out, 0, array_size));
+    //
+    //   SPAS<Add<MyInt>, BLOCK_SIZE>(N, true, int_d_in, int_d_out, h_in, h_out, seq_out);
+    //
+    //   free(h_in);
+    //   free(h_out);
+    //   free(seq_out);
+    // }
+    //
+    // else
+    {
       /*
        *  BENCHMARKING
        */
@@ -155,9 +164,9 @@ int main() {
 
 
       printf("\nSPAS float32 multiplication - ");
-      SPAS<Mult<MyFloat>, BLOCK_SIZE>(N, false, float_d_in, float_d_out, NULL, NULL);
+      SPAS<Mult<MyFloat>, BLOCK_SIZE, f32_mul_pi>(N, false, float_d_in, float_d_out, NULL, NULL);
       printf("\nSPAS float32 addition - ");
-      SPAS<Add<MyFloat>,  BLOCK_SIZE>(N, false, float_d_in, float_d_out, NULL, NULL);
+      SPAS<Add<MyFloat>,  BLOCK_SIZE, f32_mul_pi>(N, false, float_d_in, float_d_out, NULL, NULL);
 
       printf("----------------------------------------------\n\n\n");
     }

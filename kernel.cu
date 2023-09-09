@@ -20,7 +20,9 @@ void spas_kernel(uint32_t           N,             // input size in #elements
                  typename OP::ElTp *d_out,         // store res here!
                  typename OP::ElTp *prefixes,
                  typename OP::ElTp *aggregates,
-                 uint8_t           *status_flags) {
+                 uint8_t           *status_flags,
+                 typename OP::ElTp (*map_f)(typename OP::ElTp)
+                ) {
 
   typedef typename OP::ElTp ElTp;
   typedef ValFlg<ElTp> FVpair;

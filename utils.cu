@@ -43,11 +43,17 @@ void CUDASSERT(cudaError_t code) {
 template<class OP>
 typename OP::ElTp seq_scan(uint32_t           N,
                            typename OP::ElTp *h_in,
-                           typename OP::ElTp *h_out) {
-
+                           typename OP::ElTp *h_out,
+                           typename OP::ElTp (*map_f)(typename OP::ElTp)
+                          ) {
+  typename OP::ElTp *tmp = (typename OP::ElTp*) malloc(N * sizeof(typename OP::ElTp));
   typename OP::ElTp acc = OP::identity();
   for (uint32_t i = 0; i < N; i++)
-    h_out[i] = acc = OP::apply(acc, h_in[i]);
+    tmp[i] = map_f(h_in[i]);
+  for (uint32_t i = 0; i < N; i++)
+    h_out[i] = acc = OP::apply(acc, tmp[i]);
+
+  free(tmp);
 
   return acc;
 }
