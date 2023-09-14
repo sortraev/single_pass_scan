@@ -2,8 +2,6 @@
 #include <limits>
 #include "utils.cu"
 
-
-
 /*
  *  >>> SPAS DATA TYPES
  *  a data type to be used with SPAS should implement equals() and get_random()
@@ -22,6 +20,7 @@ public:
     return (seed * 214741) % m - m/2;
   }
 };
+
 
 class MyFloat {
 public:
@@ -142,14 +141,14 @@ public:
 //
 //   static __device__ inline
 //   MyValFlg<T> apply(MyValFlg<T> &vf1, MyValFlg<T> &vf2) {
-//     return MyValFlg<T>(T::apply(vf2.f() ? T::identity() : vf1.v(), vf2.v()),
+//     return MyValFlg<T>(T::apply(vf2.f() ? T::ne() : vf1.v(), vf2.v()),
 //                        vf1.f() | vf2.f());
 //   }
 //
 //   static __device__ __host__ inline
 //   ElTp apply(volatile ElTp &fvp1, volatile ElTp &fvp2) {
 //     return ElTp(fvp1.f | fvp2.f,
-//                 OP::apply(fvp2.f ? OP::identity() : fvp1.v, fvp2.v));
+//                 OP::apply(fvp2.f ? OP::ne() : fvp1.v, fvp2.v));
 //   }
 //
 //   static __device__ __host__ inline
@@ -178,7 +177,7 @@ public:
  *  >> SCAN OPERATORS
  *
  *  a binary operator to be used with SPAS should inherit class BinOp and must
- *  implement its own "ElTp apply(ElTp, ElTp)" and "ElTp identity()" methods.
+ *  implement its own "ElTp apply(ElTp, ElTp)" and "ElTp ne()" methods.
  *  
  *  add more where needed.
  */
@@ -207,7 +206,7 @@ public:
   apply(const ElTp t1, const ElTp t2) { return t1 + t2; }
 
   static __device__ __host__ inline
-  ElTp identity() { return (ElTp) 0.0f; }
+  ElTp ne() { return (ElTp) 0.0f; }
 };
 
 
@@ -220,7 +219,7 @@ public:
   ElTp apply(const ElTp t1, const ElTp t2) { return (ElTp) t1 * (ElTp) t2; }
 
   static __device__ __host__ inline
-  ElTp identity() { return (ElTp) 1.0f; }
+  ElTp ne() { return (ElTp) 1.0f; }
 };
 
 
@@ -234,12 +233,12 @@ public:
   typedef ValFlg<typename OP::ElTp> ElTp;
 
   static __device__ __host__ inline
-  ElTp identity() { return ElTp(flag_A, OP::identity()); }
+  ElTp ne() { return ElTp(flag_A, OP::ne()); }
 
   static __device__ __host__ inline
   ElTp apply(volatile ElTp &fvp1, volatile ElTp &fvp2) {
     return ElTp(fvp1.f | fvp2.f,
-                OP::apply(fvp2.f ? OP::identity() : fvp1.v, fvp2.v));
+                OP::apply(fvp2.f ? OP::ne() : fvp1.v, fvp2.v));
   }
 
   static __device__ __host__ inline

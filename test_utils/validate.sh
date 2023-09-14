@@ -1,16 +1,22 @@
 #!/bin/bash
 
 # we want to validate our program with various block and chunk sizes on both GPU's
-block_sizes="32 224 1024"
-chunk_sizes="1 9 16"
+# block_sizes="32 224 1024"
+# chunk_sizes="1 9 16"
+block_sizes="224 256"
+chunk_sizes="9 16"
 
 
-Ns="1 7 31 53 770 1270 4830 31337 "   # small inputs
-Ns+="133773 7422183 "                 # medium-sized inputs
-Ns+="290409865 "                      # large inputs
+# Ns="1 7 31 53 770 1270 4830 31337 "   # small inputs
+# Ns+="133773 7422183 "                 # medium-sized inputs
+# Ns+="290409865 "                      # large inputs
+
+Ns="31 770 2048 31337 "   # small inputs
+Ns+="7422183 "                 # medium-sized inputs
+
 
 nvcc="nvcc -O3 -o"
-executable=spas_main
+executable=main
 src=$executable.cu
 kernel=$1
 
@@ -34,7 +40,8 @@ for block_size in $block_sizes; do
   for chunk_size in $chunk_sizes; do
 
     # compile with given hyperparameters
-    hyperparams="-DBLOCK_SIZE=$block_size -DMAX_CHUNK=$chunk_size -DDO_VALIDATE=true"
+    hyperparams="-DBLOCK_SIZE=$block_size -DMAX_CHUNK=$chunk_size -DUSE_BLOCK_VIRTUALIZATION=1 -DDO_VALIDATE=true"
+    echo Hyperparams: "$hyperparams"
     $nvcc $executable $src -include $kernel.cu $hyperparams
 
     for N in $Ns; do

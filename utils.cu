@@ -7,16 +7,13 @@
 
 /* if hyperparameters not given as flags to nvcc, set them here */
 #ifndef BLOCK_SIZE
-#define BLOCK_SIZE 512
+#define BLOCK_SIZE 256
 #endif
 #ifndef MAX_CHUNK
-#define MAX_CHUNK 15
-#endif
-#ifndef DO_VALIDATE
-#define DO_VALIDATE false
+#define MAX_CHUNK 9
 #endif
 
-#define RUNS      200   /* number of runs performed during benchmarking. */
+#define RUNS      1   /* number of runs performed during benchmarking. */
 #define MAX_SHMEM 49152 /* upper bound on shared memory. same for both GPUs, but in the
                            future, we should compute this dynamically for portability.  */
 
@@ -45,7 +42,7 @@ typename OP::ElTp seq_scan(uint32_t           N,
                            typename OP::ElTp *h_in,
                            typename OP::ElTp *h_out) {
 
-  typename OP::ElTp acc = OP::identity();
+  typename OP::ElTp acc = OP::ne();
   for (uint32_t i = 0; i < N; i++)
     h_out[i] = acc = OP::apply(acc, h_in[i]);
 
@@ -54,27 +51,27 @@ typename OP::ElTp seq_scan(uint32_t           N,
 
 /*
  * given pointers to two OP::ElTp arrays
- * expected and actual, asserts that they are equal.
+ * ref and actual, asserts that they are equal.
  */
 template<class OP>
 bool validate(uint32_t           N,
-              typename OP::ElTp *expected,
+              typename OP::ElTp *ref,
               typename OP::ElTp *actual) {
 
   for (uint32_t i = 0; i < N; i++) {
-    if (!OP::equals(expected[i], actual[i])) {
+    if (!OP::equals(ref[i], actual[i])) {
 
       fprintf(stderr, "\nINVALID!! printing next 10 ...\n"
-                      "idx      expected     actual       diff\n");
+                      "idx      ref     actual       diff\n");
       for (size_t j = i; j < i + 10; j++)
         fprintf(stderr, "%-8d %-12d %-12d %-10d\n",
-                j, expected[j], actual[j], expected[j] - actual[j]);
+                j, ref[j], actual[j], ref[j] - actual[j]);
 
       return false;
     }
   }
 
-  printf("-- VALID :):)\n");
+  printf("-- VALID\n");
   return true;
 }
 

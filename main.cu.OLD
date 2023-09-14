@@ -1,6 +1,11 @@
 #include "utils.cu"
 #include <vector>
 
+#ifndef BLOCK_VIRT
+#define BLOCK_VIRT 1
+#endif
+
+#define NUM_BLOCKS 1024
 
 template <class OP, uint16_t B>
 int SPAS(uint32_t           N,
@@ -16,11 +21,16 @@ int SPAS(uint32_t           N,
   typedef typename OP::ElTp ElTp;
   typedef ValFlg<ElTp>      FVpair;
 
-  const uint16_t chunk_shmem_bound = (MAX_SHMEM / (B * sizeof(ElTp)));
+  const uint16_t chunk_shmem_bound = MAX_SHMEM / (B * sizeof(ElTp));
   const uint8_t  chunk             = MIN(MAX_CHUNK, chunk_shmem_bound);
 
   uint16_t elems_per_block = B * chunk;
-  uint32_t num_blocks = (N + elems_per_block - 1) / elems_per_block;
+  int64_t  num_logical_blocks  = (N + elems_per_block - 1) / elems_per_block;
+#if BLOCK_VIRT
+  uint32_t num_physical_blocks = NUM_BLOCKS;
+#else
+  uint32_t num_physical_blocks = (uint32_t) num_logical_blocks;
+#endif
 
   uint32_t array_size = N * sizeof(ElTp);
 
@@ -32,14 +42,14 @@ int SPAS(uint32_t           N,
 
   ElTp     *aggregates, *prefixes;
   uint8_t  *status_flags;
-  CUDASSERT(cudaMalloc(&aggregates,  num_blocks*sizeof(ElTp)));
-  CUDASSERT(cudaMalloc(&prefixes,     num_blocks*sizeof(ElTp)));
-  CUDASSERT(cudaMalloc(&status_flags, num_blocks*sizeof(uint32_t)));
-  CUDASSERT(cudaMemset(status_flags, flag_X, num_blocks*sizeof(uint8_t)));
+  CUDASSERT(cudaMalloc(&aggregates,   num_physical_blocks*sizeof(ElTp)));
+  CUDASSERT(cudaMalloc(&prefixes,     num_physical_blocks*sizeof(ElTp)));
+  CUDASSERT(cudaMalloc(&status_flags, num_physical_blocks*sizeof(uint32_t)));
+  CUDASSERT(cudaMemset(status_flags, flag_X, num_physical_blocks*sizeof(uint8_t)));
   uint32_t shared_mem_size = max(elems_per_block * sizeof(ElTp),
                                  WARP * sizeof(FVpair));
 
-  printf("(N, B, CHUNK, NUM_BLOCKS) == (%d, %d, %d, %d)\n", N, B, chunk, num_blocks);
+  printf("(N, B, CHUNK, num_physical_blocks) == (%d, %d, %d, %d)\n", N, B, chunk, num_physical_blocks);
   printf("shared mem per thread: %d\n", shared_mem_size / BLOCK_SIZE);
   printf("=========================\n\n");
 
@@ -48,14 +58,14 @@ int SPAS(uint32_t           N,
      *   =================== VALIDATION ===================
      */
 
+    printf("num_logical_blocks, num_physical_blocks == %ld, %d\n",
+        num_logical_blocks, num_physical_blocks);
     // perform sequential scan
     seq_scan<OP>(N, h_in, seq_out);
 
     // invoke SPAS :D
-    for (int i = 0; i < RUNS; i++) {
-      spas_kernel<OP, chunk><<<num_blocks, B, shared_mem_size>>>
-        (N, d_in, d_out, prefixes, aggregates, status_flags);
-    }
+    spas_kernel<OP, chunk><<<num_physical_blocks, B, shared_mem_size>>>
+      (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks);
 
     // copy back result of SPAS and validate
     CUDASSERT(cudaMemcpy(h_out, d_out, array_size, cudaMemcpyDeviceToHost));
@@ -70,13 +80,13 @@ int SPAS(uint32_t           N,
     CUDASSERT(cudaEventCreate(&t_start)); CUDASSERT(cudaEventCreate(&t_end));
 
     // dry run of kernel
-    spas_kernel<OP, chunk><<<num_blocks, B, shared_mem_size>>>
+    spas_kernel<OP, chunk><<<num_physical_blocks, B, shared_mem_size>>>
       (N, d_in, d_out, prefixes, aggregates, status_flags);
     
     // invoke SPAS kernel RUNS number of times, measuring total execution time
     CUDASSERT(cudaEventRecord(t_start));
     for (uint8_t i = 0; i < RUNS; i++) {
-      spas_kernel<OP, chunk><<<num_blocks, B, shared_mem_size>>>
+      spas_kernel<OP, chunk><<<num_physical_blocks, B, shared_mem_size>>>
         (N, d_in, d_out, prefixes, aggregates, status_flags);
     }
     CUDASSERT(cudaEventRecord(t_end));
@@ -141,8 +151,6 @@ int main() {
       free(h_out);
       free(seq_out);
     }
-
-
     else {
       /*
        *  BENCHMARKING
@@ -164,5 +172,4 @@ int main() {
 
     CUDASSERT(cudaFree(d_in)); CUDASSERT(cudaFree(d_out));
   }
-
 }

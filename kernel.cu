@@ -1,5 +1,5 @@
 #pragma once
-#include "extras.cu"
+#include "kernel_extras.cu"
 
 #if ((BLOCK_SIZE) % 32 != 0)
 #error BLOCK_SIZE must be a multiple of 32.
@@ -20,7 +20,9 @@ void spas_kernel(uint32_t           N,             // input size in #elements
                  typename OP::ElTp *d_out,         // store res here!
                  typename OP::ElTp *prefixes,
                  typename OP::ElTp *aggregates,
-                 uint8_t           *status_flags) {
+                 uint8_t           *status_flags,
+                 uint32_t           num_logical_blocks
+                ) {
 
   typedef typename OP::ElTp ElTp;
   typedef ValFlg<ElTp> FVpair;
@@ -33,6 +35,10 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   bool LAST_IN_BLOCK = threadIdx.x + 1 == blockDim.x;
   ElTp chunk[CHUNK];
 
+#if BLOCK_VIRT
+  while (1)
+#endif
+  {
   /*
    * step 1: dynmic block indexing
    */
@@ -41,18 +47,25 @@ void spas_kernel(uint32_t           N,             // input size in #elements
     *dyn_blockIdx = tmp;                 // increment dynamic block index
     status_flags[tmp] = flag_X;
                                          // and publish to the rest of the block
-    if (tmp == gridDim.x - 1)
-      dyn_gic = 0;
+    // TODO: how to reset dyn_gic when using block virtualization? is it even
+    //       necessary?
+    // if (tmp >= num_logical_blocks - 1)
+      // dyn_gic = 0;
+    // printf("tmp = %d\n", tmp);
   }
 
   __syncthreads();
-  uint32_t blockIdx = *dyn_blockIdx; // each thread fetches its dynamic blockIdx and stores it localy
+  uint32_t blockIdx = *dyn_blockIdx; // each thread fetches its dynamic blockIdx and stores it locally
+#if BLOCK_VIRT
+  if (blockIdx >= num_logical_blocks)
+    return;
+#endif
 
   /*
    * step 2: each thread copies CHUNK elements from global to shared memory
    */
   uint32_t global_block_offset = blockIdx * blockDim.x * CHUNK;
-  copyFromGlb2ShrMem<OP, CHUNK>(global_block_offset, N, OP::identity(), (ElTp*) d_in, shmem);
+  copyFromGlb2ShrMem<OP, CHUNK>(global_block_offset, N, OP::ne(), (ElTp*) d_in, shmem);
 
   __syncthreads();
 
@@ -69,7 +82,7 @@ void spas_kernel(uint32_t           N,             // input size in #elements
 
 
   // perform in-place inclusive scan of chunk and store result in shared memory.
-  ElTp acc = OP::identity();
+  ElTp acc = OP::ne();
   #pragma unroll
   for (uint8_t i = 0; i < CHUNK; i++)
     chunk[i] = acc = OP::apply(acc, chunk[i]);
@@ -87,11 +100,13 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   if (LAST_IN_BLOCK) {
     if (FIRST_BLOCK) {
       prefixes[blockIdx]     = block_aggregate;
-      __threadfence_block();
+      // __threadfence_block();
+      __threadfence();
       status_flags[blockIdx] = flag_P;
     } else {
       aggregates[blockIdx]   = block_aggregate;
-      __threadfence_block();
+      // __threadfence_block();
+      __threadfence();
       status_flags[blockIdx] = flag_A;
     }
 
@@ -99,7 +114,7 @@ void spas_kernel(uint32_t           N,             // input size in #elements
 
   __syncthreads();
 
-  ElTp chunk_exc_prefix = OP::identity();
+  ElTp chunk_exc_prefix = OP::ne();
   if (!FIRST_IN_BLOCK)
     chunk_exc_prefix = shmem[threadIdx.x-1];       // extract chunk prefixes before shared mem is reused.
 
@@ -107,7 +122,7 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   /*
    * step 6: decoupled lookback to compute exclusive prefix.
    */
-  ElTp block_exc_prefix = OP::identity();
+  ElTp block_exc_prefix = OP::ne();
   if (!FIRST_BLOCK) {
 
     if (threadIdx.x < WARP) { // only first warp in block performs lookback
@@ -115,7 +130,7 @@ void spas_kernel(uint32_t           N,             // input size in #elements
       int32_t lookback_idx = blockIdx + threadIdx.x - WARP;
       while (1) {
 
-        FVpair my_fvp = FVpair(flag_P, OP::identity());
+        FVpair my_fvp = FVpair(flag_P, OP::ne());
 
         // choose whether to read an aggregate or prefix depending on the flag
         if (lookback_idx >= 0) {
@@ -157,7 +172,8 @@ void spas_kernel(uint32_t           N,             // input size in #elements
 
   if (!FIRST_BLOCK && LAST_IN_BLOCK) {
     prefixes[blockIdx] = OP::apply(block_exc_prefix, block_aggregate);
-    __threadfence_block();
+    // __threadfence_block();
+    __threadfence();
     status_flags[blockIdx] = flag_P;
   }
 
@@ -177,4 +193,7 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   __syncthreads();
 
   copyFromShr2GlbMem<OP, CHUNK>(global_block_offset, N, (ElTp*) d_out, shmem);
+  // return;
+  }
+  // return;
 }

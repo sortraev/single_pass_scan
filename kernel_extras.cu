@@ -1,6 +1,6 @@
 #pragma once
 #include <stdint.h>
-#include "types.cuh"
+#include "types.h"
 
 #define lgWARP 5
 #define WARP   (1 << lgWARP)
