@@ -21,7 +21,8 @@ void spas_kernel(uint32_t           N,             // input size in #elements
                  typename OP::ElTp *prefixes,
                  typename OP::ElTp *aggregates,
                  uint8_t           *status_flags,
-                 uint32_t           num_logical_blocks
+                 uint32_t           num_logical_blocks,
+                 uint32_t           virt_factor
                 ) {
 
   typedef typename OP::ElTp ElTp;
@@ -36,7 +37,8 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   ElTp chunk[CHUNK];
 
 #if BLOCK_VIRT
-  while (1)
+  for (int _ = 0; _ < virt_factor; _++)
+#else
 #endif
   {
   /*
@@ -49,16 +51,21 @@ void spas_kernel(uint32_t           N,             // input size in #elements
                                          // and publish to the rest of the block
     // TODO: how to reset dyn_gic when using block virtualization? is it even
     //       necessary?
-    // if (tmp >= num_logical_blocks - 1)
-      // dyn_gic = 0;
+#if !(BLOCK_VIRT)
+    if (tmp >= num_logical_blocks - 1)
+      dyn_gic = 0;
+#endif
     // printf("tmp = %d\n", tmp);
   }
 
   __syncthreads();
   uint32_t blockIdx = *dyn_blockIdx; // each thread fetches its dynamic blockIdx and stores it locally
 #if BLOCK_VIRT
-  if (blockIdx >= num_logical_blocks)
+  if (blockIdx >= num_logical_blocks - 1) {
+    if (FIRST_IN_BLOCK)
+      dyn_gic = 0;
     return;
+  }
 #endif
 
   /*
@@ -98,18 +105,9 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   ElTp block_aggregate = scanIncBlock<OP>(shmem, threadIdx.x);
 
   if (LAST_IN_BLOCK) {
-    if (FIRST_BLOCK) {
-      prefixes[blockIdx]     = block_aggregate;
-      // __threadfence_block();
-      __threadfence();
-      status_flags[blockIdx] = flag_P;
-    } else {
-      aggregates[blockIdx]   = block_aggregate;
-      // __threadfence_block();
-      __threadfence();
-      status_flags[blockIdx] = flag_A;
-    }
-
+    (FIRST_BLOCK ? prefixes : aggregates)[blockIdx] = block_aggregate;
+    __threadfence();
+    status_flags[blockIdx] = FIRST_BLOCK; // = 1 = flag_P if first block; else = 0 = flag_A>
   }
 
   __syncthreads();
@@ -193,7 +191,5 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   __syncthreads();
 
   copyFromShr2GlbMem<OP, CHUNK>(global_block_offset, N, (ElTp*) d_out, shmem);
-  // return;
   }
-  // return;
 }

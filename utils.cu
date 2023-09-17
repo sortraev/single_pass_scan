@@ -6,18 +6,20 @@
 
 
 /* if hyperparameters not given as flags to nvcc, set them here */
-#ifndef BLOCK_SIZE
-#define BLOCK_SIZE 256
-#endif
+// #ifndef BLOCK_SIZE
+// #define BLOCK_SIZE 256
+// #endif
 #ifndef MAX_CHUNK
 #define MAX_CHUNK 9
 #endif
 
-#define RUNS      1   /* number of runs performed during benchmarking. */
+#define RUNS      200   /* number of runs performed during benchmarking. */
 #define MAX_SHMEM 49152 /* upper bound on shared memory. same for both GPUs, but in the
                            future, we should compute this dynamically for portability.  */
 
 #define MIN(x, y) ((x) < (y) ? x : y) /* since we need a compile-time constant min() function to compute CHUNK */
+
+#define CEIL_DIV(x, y) (((x) + (y) - 1) / (y))
 
 #define flag_A ((uint8_t) 0)
 #define flag_P ((uint8_t) 1)

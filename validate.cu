@@ -4,8 +4,10 @@
 
 
 #ifndef BLOCK_SIZE
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 1024
 #endif
+
+#define RUNS 200
 
 int main(int argc, char **argv) {
 
@@ -42,6 +44,7 @@ int main(int argc, char **argv) {
 
 
   // call GPU kernel and copy result to host mem.
+
   single_pass_scan
     <Add<MyInt>, BLOCK_SIZE, BLOCK_VIRT>
     (N, d_in, d_out, num_blocks_request);

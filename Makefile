@@ -13,6 +13,13 @@ compile: $(program)
 
 validate: validate.cu $(srcs)
 	nvcc $(nvcc_flags) -DBLOCK_VIRT=1 validate.cu -o $@
+validate_novirt: validate.cu $(srcs)
+	nvcc $(nvcc_flags) -DBLOCK_VIRT=0 validate.cu -o $@
+
+bench: bench.cu $(srcs)
+	nvcc $(nvcc_flags) -DBLOCK_VIRT=1 bench.cu -o $@
+bench_novirt: bench.cu $(srcs)
+	nvcc $(nvcc_flags) -DBLOCK_VIRT=0 bench.cu -o $@
 
 clean:
 	rm -f $(program) bench_tmpfile.tmp
