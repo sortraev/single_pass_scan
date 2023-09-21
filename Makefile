@@ -22,4 +22,4 @@ bench_novirt: bench.cu $(srcs)
 	nvcc $(nvcc_flags) -DBLOCK_VIRT=0 bench.cu -o $@
 
 clean:
-	rm -f $(program) bench_tmpfile.tmp
+	rm -f bench bench_novirt validate validate_novirt $(program) bench_tmpfile.tmp

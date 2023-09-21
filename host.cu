@@ -7,7 +7,8 @@ template <class OP, uint16_t B, bool do_block_virtualization>
 int single_pass_scan(uint32_t           N,
                      typename OP::ElTp *d_in,
                      typename OP::ElTp *d_out,
-                     int64_t num_blocks_request = -1
+                     int64_t num_requested_blocks = -1,
+                     bool show_config = false
                     ) {
 
   typedef typename OP::ElTp ElTp;
@@ -21,9 +22,12 @@ int single_pass_scan(uint32_t           N,
 
   uint32_t num_logical_blocks  = CEIL_DIV(N, elems_per_block);
   uint32_t num_physical_blocks = num_logical_blocks;
-  if (do_block_virtualization && num_blocks_request > 0)
-    num_physical_blocks = MIN((uint32_t) num_blocks_request, num_logical_blocks);
+  if (do_block_virtualization && num_requested_blocks > 0)
+    num_physical_blocks = MIN((uint32_t) num_requested_blocks, num_logical_blocks);
   uint32_t virt_factor = CEIL_DIV(num_logical_blocks, num_physical_blocks);
+
+  uint32_t num_virtblocks = virt_factor * num_physical_blocks;
+  uint32_t num_residual_virtblocks = num_virtblocks - num_logical_blocks;
 
   ElTp     *aggregates, *prefixes;
   uint8_t  *status_flags;
@@ -33,27 +37,40 @@ int single_pass_scan(uint32_t           N,
   CUDASSERT(cudaMemset(status_flags, flag_X, num_logical_blocks*sizeof(uint8_t)));
 
 
-  printf("spas_kernel bench\n"
-         "  block virt = %d\n\n"
-         "  block size        = %d\n\n"
-         "  #logical blocks   = %d\n"
-         "  #requested blocks = %d\n"
-         "  #physical blocks  = %d\n"
-         "  virt factor       = %d\n\n"
-         "  chunk      = %d\n"
-         "  shmem_size = %d\n"
-         "  N          = %d\n",
-         do_block_virtualization,
-         B,
-         num_logical_blocks,
-         num_blocks_request,
-         num_physical_blocks,
-         virt_factor,
-         chunk, shmem_size, N);
+  if (show_config)
+    printf("spas_kernel bench\n"
+           "  block virt = %d\n\n"
 
-  spas_kernel<OP, chunk><<<num_physical_blocks, B, shmem_size>>>(
-    N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks,
-    virt_factor);
+           "  block size        = %d\n\n"
+
+           "  #requested blocks = %d\n"
+           "  #logical blocks   = %d\n"
+           "  #spawned blocks   = %d\n\n"
+
+           "  virtualization factor = %d\n"
+           "  #virtblocks           = %d\n"
+           "  #residual_virtblocks  = %d\n\n"
+
+           "  chunk      = %d\n"
+           "  shmem_size = %d\n"
+           "  N          = %d\n",
+           do_block_virtualization,
+
+           B,
+
+           num_requested_blocks,
+           num_logical_blocks,
+           num_physical_blocks,
+
+           virt_factor,
+           num_virtblocks,
+           num_residual_virtblocks,
+           chunk, shmem_size, N);
+
+  spas_kernel
+    <OP, chunk>
+    <<<num_physical_blocks, B, shmem_size>>>
+    (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks);
 
   CUDASSERT(cudaFree(aggregates));
   CUDASSERT(cudaFree(prefixes));
@@ -76,8 +93,8 @@ int single_pass_scan(uint32_t           N,
 //
 //   uint32_t num_logical_blocks  = (N + elems_per_block - 1) / elems_per_block;
 //   uint32_t num_physical_blocks = num_logical_blocks;
-//   if (do_block_virtualization && num_blocks_request > 0)
-//     num_physical_blocks = MIN((uint32_t) num_blocks_request,
+//   if (do_block_virtualization && num_requested_blocks > 0)
+//     num_physical_blocks = MIN((uint32_t) num_requested_blocks,
 //                               num_logical_blocks);
 //
 //   uint32_t array_size = N * sizeof(ElTp);

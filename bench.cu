@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #ifndef BLOCK_SIZE
-#define BLOCK_SIZE 1024
+#define BLOCK_SIZE 256
 #endif
 
 #ifndef RUNS
@@ -52,9 +52,13 @@ int main(int argc, char **argv) {
   // init auxiliary arrays.
   ElTp     *aggregates, *prefixes;
   uint8_t  *status_flags;
+  uint32_t *dyn_gic;
   CUDASSERT(cudaMalloc(&aggregates,   num_logical_blocks*sizeof(ElTp)));
   CUDASSERT(cudaMalloc(&prefixes,     num_logical_blocks*sizeof(ElTp)));
   CUDASSERT(cudaMalloc(&status_flags, num_logical_blocks*sizeof(uint8_t)));
+  CUDASSERT(cudaMalloc(&dyn_gic, sizeof(uint32_t)));
+
+  CUDASSERT(cudaMemset(dyn_gic, 0, sizeof(uint32_t)));
   CUDASSERT(cudaMemset(status_flags, flag_X, num_logical_blocks*sizeof(uint8_t)));
 
   printf("spas_kernel bench\n"
@@ -82,8 +86,12 @@ int main(int argc, char **argv) {
     spas_kernel
       <Add<MyFloat>, chunk>
       <<<num_physical_blocks, BLOCK_SIZE, shmem_size>>>
-      (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks,
-       virt_factor);
+#if BLOCK_VIRT
+      (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks, dyn_gic);
+  cudaMemset(dyn_gic, 0, sizeof(uint32_t));
+#else
+      (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks);
+#endif
 
   CUDASSERT(cudaEventRecord(t_start));
 #pragma OPTIMIZE OFF
@@ -92,11 +100,17 @@ int main(int argc, char **argv) {
     spas_kernel
       <Add<MyFloat>, chunk>
       <<<num_physical_blocks, BLOCK_SIZE, shmem_size>>>
-      (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks,
-       virt_factor);
+#if BLOCK_VIRT
+      (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks, dyn_gic);
+    cudaMemset(dyn_gic, 0, sizeof(uint32_t));
+#else
+      (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks);
+#endif
   }
   CUDASSERT(cudaEventRecord(t_end));
-  CUDASSERT(cudaEventSynchronize(t_end)); CUDASSERT(cudaPeekAtLastError());
+  CUDASSERT(cudaEventSynchronize(t_end));
+  CUDASSERT(cudaPeekAtLastError());
+
 
   // get elapsed and report benchmark result
   float elapsed = get_elapsed(t_start, t_end, RUNS);

@@ -1,12 +1,12 @@
 #pragma once
 #include "kernel_extras.cu"
 
-#if ((BLOCK_SIZE) % 32 != 0)
-#error BLOCK_SIZE must be a multiple of 32.
-#endif
-#if ((MAX_CHUNK <= 0))
-#error MAX_CHUNK must be positive.
-#endif
+// #if ((BLOCK_SIZE) % 32 != 0)
+// #error BLOCK_SIZE must be a multiple of 32.
+// #endif
+// #if ((MAX_CHUNK <= 0))
+// #error MAX_CHUNK must be positive.
+// #endif
 
 #define FIRST_IN_BLOCK (!threadIdx.x)
 #define FIRST_BLOCK    (!blockIdx)
@@ -21,47 +21,49 @@ void spas_kernel(uint32_t           N,             // input size in #elements
                  typename OP::ElTp *prefixes,
                  typename OP::ElTp *aggregates,
                  uint8_t           *status_flags,
-                 uint32_t           num_logical_blocks,
-                 uint32_t           virt_factor
+                 uint32_t           num_logical_blocks
                 ) {
 
   typedef typename OP::ElTp ElTp;
   typedef ValFlg<ElTp> FVpair;
 
   extern __shared__ uint8_t ext_shmem[];
-  uint32_t *dyn_blockIdx = (uint32_t*) ext_shmem;
+  uint32_t *blockIdx_shmem = (uint32_t*) ext_shmem;
   ElTp     *shmem        = (ElTp*)     ext_shmem;
   FVpair   *fvp_shmem    = (FVpair*)   ext_shmem;
 
   bool LAST_IN_BLOCK = threadIdx.x + 1 == blockDim.x;
   ElTp chunk[CHUNK];
 
+
 #if BLOCK_VIRT
+  const uint32_t virt_factor = CEIL_DIV(num_logical_blocks, gridDim.x);
   for (int _ = 0; _ < virt_factor; _++)
-#else
 #endif
   {
   /*
-   * step 1: dynmic block indexing
+   * step 1: dynamic block indexing
    */
   if (FIRST_IN_BLOCK) {
+
     uint32_t tmp = atomicAdd(&dyn_gic, 1);
-    *dyn_blockIdx = tmp;                 // increment dynamic block index
+    *blockIdx_shmem = tmp;               // increment dynamic block index
     status_flags[tmp] = flag_X;
                                          // and publish to the rest of the block
-    // TODO: how to reset dyn_gic when using block virtualization? is it even
-    //       necessary?
 #if !(BLOCK_VIRT)
-    if (tmp >= num_logical_blocks - 1)
+    // when not using virtualization, simply let the last block reset the
+    // counter. this is safe since no more blocks are spawned.
+    if (tmp == gridDim.x - 1)
       dyn_gic = 0;
 #endif
-    // printf("tmp = %d\n", tmp);
   }
 
   __syncthreads();
-  uint32_t blockIdx = *dyn_blockIdx; // each thread fetches its dynamic blockIdx and stores it locally
+  uint32_t blockIdx = *blockIdx_shmem; // each thread fetches its dynamic blockIdx and stores it locally
+
 #if BLOCK_VIRT
-  if (blockIdx >= num_logical_blocks - 1) {
+  if (blockIdx >= num_logical_blocks) {
+    // TODO: find out how to safely reset dyn_gic.
     if (FIRST_IN_BLOCK)
       dyn_gic = 0;
     return;
