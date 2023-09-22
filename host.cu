@@ -36,6 +36,11 @@ int single_pass_scan(uint32_t           N,
   CUDASSERT(cudaMalloc(&status_flags, num_logical_blocks*sizeof(uint8_t)));
   CUDASSERT(cudaMemset(status_flags, flag_X, num_logical_blocks*sizeof(uint8_t)));
 
+#if BLOCK_VIRT
+  uint32_t *dyn_gic;
+  CUDASSERT(cudaMalloc(&dyn_gic, sizeof(uint32_t)));
+  CUDASSERT(cudaMemset(dyn_gic, 0, sizeof(uint32_t)));
+#endif
 
   if (show_config)
     printf("spas_kernel bench\n"
@@ -70,7 +75,12 @@ int single_pass_scan(uint32_t           N,
   spas_kernel
     <OP, chunk>
     <<<num_physical_blocks, B, shmem_size>>>
-    (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks);
+#if BLOCK_VIRT
+      (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks, dyn_gic);
+  cudaMemset(dyn_gic, 0, sizeof(uint32_t));
+#else
+      (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks);
+#endif
 
   CUDASSERT(cudaFree(aggregates));
   CUDASSERT(cudaFree(prefixes));

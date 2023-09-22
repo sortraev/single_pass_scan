@@ -11,7 +11,20 @@
 #define FIRST_IN_BLOCK (!threadIdx.x)
 #define FIRST_BLOCK    (!blockIdx)
 
+
+// no_virt: dyn_gic global variable.
+// virt:    dyn_gic passed as argument.
+// virt with finish counter: dyn_gic and finish_counter as global variables.
+
+
+#if NO_VIRT
 __device__ uint32_t dyn_gic = 0;     // (dyn)amic (g)lobal (i)ndex (c)ounter
+#endif
+
+#if BLOCK_VIRT_FC
+__device__ uint32_t dyn_gic = 0;     // (dyn)amic (g)lobal (i)ndex (c)ounter
+__device__ uint32_t finish_counter = 0;
+#endif
 
 template<class OP, uint8_t CHUNK>
 __global__
@@ -22,6 +35,9 @@ void spas_kernel(uint32_t           N,             // input size in #elements
                  typename OP::ElTp *aggregates,
                  uint8_t           *status_flags,
                  uint32_t           num_logical_blocks
+#if BLOCK_VIRT
+                ,uint32_t *dyn_gic
+#endif
                 ) {
 
   typedef typename OP::ElTp ElTp;
@@ -36,7 +52,7 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   ElTp chunk[CHUNK];
 
 
-#if BLOCK_VIRT
+#if (BLOCK_VIRT) || (BLOCK_VIRT_FC)
   const uint32_t virt_factor = CEIL_DIV(num_logical_blocks, gridDim.x);
   for (int _ = 0; _ < virt_factor; _++)
 #endif
@@ -46,11 +62,16 @@ void spas_kernel(uint32_t           N,             // input size in #elements
    */
   if (FIRST_IN_BLOCK) {
 
+#if BLOCK_VIRT
+    uint32_t tmp = atomicAdd(dyn_gic, 1);
+#else
     uint32_t tmp = atomicAdd(&dyn_gic, 1);
+#endif
+
     *blockIdx_shmem = tmp;               // increment dynamic block index
     status_flags[tmp] = flag_X;
                                          // and publish to the rest of the block
-#if !(BLOCK_VIRT)
+#if NO_VIRT
     // when not using virtualization, simply let the last block reset the
     // counter. this is safe since no more blocks are spawned.
     if (tmp == gridDim.x - 1)
@@ -62,10 +83,12 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   uint32_t blockIdx = *blockIdx_shmem; // each thread fetches its dynamic blockIdx and stores it locally
 
 #if BLOCK_VIRT
+  if (blockIdx >= num_logical_blocks)
+    return;
+#elif BLOCK_VIRT_FC
   if (blockIdx >= num_logical_blocks) {
-    // TODO: find out how to safely reset dyn_gic.
-    if (FIRST_IN_BLOCK)
-      dyn_gic = 0;
+    if (FIRST_IN_BLOCK && (atomicAdd(&finish_counter, 1) == gridDim.x - 1))
+      finish_counter = dyn_gic = 0;
     return;
   }
 #endif

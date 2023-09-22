@@ -10,6 +10,13 @@
 #define RUNS 200
 #endif
 
+
+#define NO_VIRT (!(BLOCK_VIRT))
+
+#if BLOCK_VIRT_FC
+#define BLOCK_VIRT 0
+#endif
+
 int main(int argc, char **argv) {
 
   typedef typename MyFloat::ElTp ElTp;
@@ -52,14 +59,16 @@ int main(int argc, char **argv) {
   // init auxiliary arrays.
   ElTp     *aggregates, *prefixes;
   uint8_t  *status_flags;
-  uint32_t *dyn_gic;
   CUDASSERT(cudaMalloc(&aggregates,   num_logical_blocks*sizeof(ElTp)));
   CUDASSERT(cudaMalloc(&prefixes,     num_logical_blocks*sizeof(ElTp)));
   CUDASSERT(cudaMalloc(&status_flags, num_logical_blocks*sizeof(uint8_t)));
-  CUDASSERT(cudaMalloc(&dyn_gic, sizeof(uint32_t)));
-
-  CUDASSERT(cudaMemset(dyn_gic, 0, sizeof(uint32_t)));
   CUDASSERT(cudaMemset(status_flags, flag_X, num_logical_blocks*sizeof(uint8_t)));
+
+#if BLOCK_VIRT
+  uint32_t *dyn_gic;
+  CUDASSERT(cudaMalloc(&dyn_gic, sizeof(uint32_t)));
+  CUDASSERT(cudaMemset(dyn_gic, 0, sizeof(uint32_t)));
+#endif
 
   printf("spas_kernel bench\n"
          "  block virt = %d\n\n"
@@ -88,7 +97,7 @@ int main(int argc, char **argv) {
       <<<num_physical_blocks, BLOCK_SIZE, shmem_size>>>
 #if BLOCK_VIRT
       (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks, dyn_gic);
-  cudaMemset(dyn_gic, 0, sizeof(uint32_t));
+    cudaMemset(dyn_gic, 0, sizeof(uint32_t));
 #else
       (N, d_in, d_out, prefixes, aggregates, status_flags, num_logical_blocks);
 #endif
@@ -97,6 +106,7 @@ int main(int argc, char **argv) {
 #pragma OPTIMIZE OFF
   for (int i = 0; i < RUNS; i++) {
 #pragma OPTIMIZE ON
+
     spas_kernel
       <Add<MyFloat>, chunk>
       <<<num_physical_blocks, BLOCK_SIZE, shmem_size>>>
