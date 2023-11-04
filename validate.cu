@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < VALIDATION_RUNS; i++) {
     single_pass_scan
-      <Add<MyInt>, BLOCK_SIZE, BLOCK_VIRT>
+      <Add<MyInt>, BLOCK_SIZE>
       (N, d_in, d_out, num_blocks_request,
        i == 0);
   }

@@ -1,30 +1,10 @@
 #pragma once
 #include "kernel_extras.cu"
 
-// #if ((BLOCK_SIZE) % 32 != 0)
-// #error BLOCK_SIZE must be a multiple of 32.
-// #endif
-// #if ((MAX_CHUNK <= 0))
-// #error MAX_CHUNK must be positive.
-// #endif
 
 #define FIRST_IN_BLOCK (!threadIdx.x)
 #define FIRST_BLOCK    (!blockIdx)
 
-
-// no_virt: dyn_gic global variable.
-// virt:    dyn_gic passed as argument.
-// virt with finish counter: dyn_gic and finish_counter as global variables.
-
-
-#if NO_VIRT
-__device__ uint32_t dyn_gic = 0;     // (dyn)amic (g)lobal (i)ndex (c)ounter
-#endif
-
-#if BLOCK_VIRT_FC
-__device__ uint32_t dyn_gic = 0;     // (dyn)amic (g)lobal (i)ndex (c)ounter
-__device__ uint32_t finish_counter = 0;
-#endif
 
 template<class OP, uint8_t CHUNK>
 __global__
@@ -34,10 +14,8 @@ void spas_kernel(uint32_t           N,             // input size in #elements
                  typename OP::ElTp *prefixes,
                  typename OP::ElTp *aggregates,
                  uint8_t           *status_flags,
-                 uint32_t           num_logical_blocks
-#if BLOCK_VIRT
-                ,uint32_t *dyn_gic
-#endif
+                 uint32_t           num_virtblocks,
+                 uint32_t          *dyn_gic
                 ) {
 
   typedef typename OP::ElTp ElTp;
@@ -52,46 +30,28 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   ElTp chunk[CHUNK];
 
 
-#if (BLOCK_VIRT) || (BLOCK_VIRT_FC)
-  const uint32_t virt_factor = CEIL_DIV(num_logical_blocks, gridDim.x);
-  for (int _ = 0; _ < virt_factor; _++)
-#endif
+  const uint32_t virtloop_bound = CEIL_DIV(num_virtblocks - blockIdx.x, gridDim.x);
+  for (int _ = 0; _ < virtloop_bound; _++)
   {
   /*
    * step 1: dynamic block indexing
    */
   if (FIRST_IN_BLOCK) {
 
-#if BLOCK_VIRT
-    uint32_t tmp = atomicAdd(dyn_gic, 1);
-#else
-    uint32_t tmp = atomicAdd(&dyn_gic, 1);
-#endif
+    uint32_t tmp = atomicAdd(dyn_gic, 1); // increment dynamic block index
 
-    *blockIdx_shmem = tmp;               // increment dynamic block index
+    *blockIdx_shmem = tmp;                // and publish to the rest of the block
     status_flags[tmp] = flag_X;
-                                         // and publish to the rest of the block
-#if NO_VIRT
+                                          
+
     // when not using virtualization, simply let the last block reset the
     // counter. this is safe since no more blocks are spawned.
     if (tmp == gridDim.x - 1)
-      dyn_gic = 0;
-#endif
+      *dyn_gic = 0;
   }
 
   __syncthreads();
   uint32_t blockIdx = *blockIdx_shmem; // each thread fetches its dynamic blockIdx and stores it locally
-
-#if BLOCK_VIRT
-  if (blockIdx >= num_logical_blocks)
-    return;
-#elif BLOCK_VIRT_FC
-  if (blockIdx >= num_logical_blocks) {
-    if (FIRST_IN_BLOCK && (atomicAdd(&finish_counter, 1) == gridDim.x - 1))
-      finish_counter = dyn_gic = 0;
-    return;
-  }
-#endif
 
   /*
    * step 2: each thread copies CHUNK elements from global to shared memory
@@ -130,9 +90,19 @@ void spas_kernel(uint32_t           N,             // input size in #elements
   ElTp block_aggregate = scanIncBlock<OP>(shmem, threadIdx.x);
 
   if (LAST_IN_BLOCK) {
-    (FIRST_BLOCK ? prefixes : aggregates)[blockIdx] = block_aggregate;
-    __threadfence();
-    status_flags[blockIdx] = FIRST_BLOCK; // = 1 = flag_P if first block; else = 0 = flag_A>
+    if (FIRST_BLOCK) {
+      prefixes[blockIdx] = block_aggregate;
+      __threadfence();
+      status_flags[blockIdx] = flag_P;
+    }
+    else {
+      aggregates[blockIdx] = block_aggregate;
+      __threadfence();
+      status_flags[blockIdx] = flag_A;
+    }
+    // (FIRST_BLOCK ? prefixes : aggregates)[blockIdx] = block_aggregate;
+    // __threadfence();
+    // status_flags[blockIdx] = FIRST_BLOCK; // = 1 = flag_P if first block; else = 0 = flag_A>
   }
 
   __syncthreads();

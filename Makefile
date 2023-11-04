@@ -12,7 +12,8 @@ nvcc_flags=-O3
 compile: $(program)
 
 validate: validate.cu $(srcs)
-	nvcc $(nvcc_flags) -DBLOCK_VIRT=1 validate.cu -o $@
+	nvcc $(nvcc_flags) validate.cu -o $@
+
 validate_novirt: validate.cu $(srcs)
 	nvcc $(nvcc_flags) -DBLOCK_VIRT=0 validate.cu -o $@
 
